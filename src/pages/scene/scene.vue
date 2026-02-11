@@ -29,31 +29,31 @@
       <cover-view class="hint-text">{{ hintText }}</cover-view>
     </cover-view>
 
-    <!-- 左侧绘图工具（弹窗打开时隐藏） -->
+    <!-- 左侧绘图工具（弹窗打开时隐藏，独立类名避免影响底部工具栏） -->
     <cover-view v-if="engine.mode.value === 'edit' && !showLabelInput" class="toolbar-left">
       <cover-view
-        class="tool-item"
+        class="shape-btn"
         :class="{ active: engine.currentTool.value === 'line' }"
         @click="toggleTool('line')"
       >
-        <cover-view class="tool-icon tool-icon-line">—</cover-view>
-        <cover-view class="tool-label">直线</cover-view>
+        <cover-view class="shape-btn-icon shape-icon-line">—</cover-view>
+        <cover-view class="shape-btn-label">直线</cover-view>
       </cover-view>
       <cover-view
-        class="tool-item"
+        class="shape-btn"
         :class="{ active: engine.currentTool.value === 'rect' }"
         @click="toggleTool('rect')"
       >
-        <cover-view class="tool-icon tool-icon-rect">□</cover-view>
-        <cover-view class="tool-label">矩形</cover-view>
+        <cover-view class="shape-btn-icon shape-icon-rect">□</cover-view>
+        <cover-view class="shape-btn-label">矩形</cover-view>
       </cover-view>
       <cover-view
-        class="tool-item"
+        class="shape-btn"
         :class="{ active: engine.currentTool.value === 'label' }"
         @click="toggleTool('label')"
       >
-        <cover-view class="tool-icon tool-icon-label">A</cover-view>
-        <cover-view class="tool-label">标签</cover-view>
+        <cover-view class="shape-btn-icon shape-icon-label">A</cover-view>
+        <cover-view class="shape-btn-label">标签</cover-view>
       </cover-view>
     </cover-view>
 
@@ -334,7 +334,7 @@ const handleLabelSize = (delta) => {
   color: #bbb;
 }
 
-/* 左侧绘图工具（直线/矩形/标签），悬浮垂直居中 */
+/* 左侧绘图工具（直线/矩形/标签），内边距缩小，独立类名不影响底部 */
 .toolbar-left {
   position: fixed;
   left: 24rpx;
@@ -343,13 +343,68 @@ const handleLabelSize = (delta) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16rpx;
-  padding: 20rpx 12rpx;
-  border-radius: 24rpx;
+  gap: 8rpx;
+  padding: 10rpx 6rpx;
+  border-radius: 16rpx;
   background-color: rgba(255, 255, 255, 0.95);
   border: 1rpx solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.06);
   z-index: 100;
+}
+
+.shape-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6rpx 12rpx;
+  border-radius: 8rpx;
+  min-width: 36rpx;
+
+  &.active {
+    background: rgba(7, 193, 96, 0.1);
+    .shape-btn-icon,
+    .shape-btn-label {
+      color: #07c160;
+    }
+  }
+}
+
+.shape-btn-icon {
+  width: 44rpx;
+  height: 44rpx;
+  line-height: 44rpx;
+  text-align: center;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+  box-sizing: border-box;
+}
+
+.shape-icon-line {
+  font-size: 36rpx;
+  font-weight: 700;
+  letter-spacing: -2rpx;
+}
+.shape-icon-rect {
+  font-size: 34rpx;
+  line-height: 44rpx;
+}
+.shape-icon-label {
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.shape-btn-label {
+  font-size: 18rpx;
+  color: #999;
+  margin-top: 2rpx;
+}
+
+.toolbar-left .shape-btn.active .shape-btn-icon {
+  color: #07c160;
+}
+.toolbar-left .shape-btn.active .shape-btn-label {
+  color: #07c160;
 }
 
 /* 底部工具栏（撤销/删除/保存） */
@@ -440,34 +495,6 @@ const handleLabelSize = (delta) => {
 }
 .tool-item-size .tool-label {
   color: #666;
-}
-
-/* 左侧绘图工具图标：统一尺寸与样式 */
-.toolbar-left .tool-icon {
-  width: 56rpx;
-  height: 56rpx;
-  line-height: 56rpx;
-  text-align: center;
-  font-size: 40rpx;
-  font-weight: 600;
-  color: #333;
-  box-sizing: border-box;
-}
-.toolbar-left .tool-item.active .tool-icon {
-  color: #07c160;
-}
-.tool-icon-line {
-  font-size: 44rpx;
-  font-weight: 700;
-  letter-spacing: -2rpx;
-}
-.tool-icon-rect {
-  font-size: 42rpx;
-  line-height: 56rpx;
-}
-.tool-icon-label {
-  font-size: 40rpx;
-  font-weight: 600;
 }
 
 .tool-label {

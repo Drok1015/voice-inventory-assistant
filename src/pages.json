@@ -1,0 +1,68 @@
+{
+  "pages": [
+    {
+      "path": "pages/record/record",
+      "style": {
+        "navigationBarTitleText": "收小纳"
+      }
+    },
+    {
+      "path": "pages/display/display",
+      "style": {
+        "navigationBarTitleText": "库存清单"
+      }
+    },
+    {
+      "path": "pages/scene/scene",
+      "style": {
+        "navigationBarTitleText": "场景",
+        "disableScroll": true
+      }
+    },
+    {
+      "path": "pages/detail/detail",
+      "style": {
+        "navigationBarTitleText": "手动添加"
+      }
+    },
+    {
+      "path": "pages/scene-label/scene-label",
+      "style": {
+        "navigationBarTitleText": "标签详情"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "收小纳",
+    "navigationBarBackgroundColor": "#F8F8F8",
+    "backgroundColor": "#F8F8F8"
+  },
+  "tabBar": {
+    "color": "#999999",
+    "selectedColor": "#07c160",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "iconWidth": "35",
+    "list": [
+      {
+        "pagePath": "pages/record/record",
+        "text": " ",
+        "iconPath": "static/tab-record.png",
+        "selectedIconPath": "static/tab-record-active.png"
+      },
+      {
+        "pagePath": "pages/display/display",
+        "text": " ",
+        "iconPath": "static/tab-display.png",
+        "selectedIconPath": "static/tab-display-active.png"
+      },
+      {
+        "pagePath": "pages/scene/scene",
+        "text": " ",
+        "iconPath": "static/tab-scene.png",
+        "selectedIconPath": "static/tab-scene-active.png"
+      }
+    ]
+  }
+}

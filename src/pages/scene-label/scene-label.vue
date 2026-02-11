@@ -94,8 +94,10 @@
                 <view
                   v-for="item in zoneItems"
                   :key="item.id"
-                  class="item-tag"
+                  :class="['item-tag', { dragging: draggingItemId === item.id }]"
                   @touchstart.stop="handleTagTouchStart(item.id, $event)"
+                  @touchmove.stop="handleTagTouchMove(item.id, $event)"
+                  @touchend.stop="handlePageTouchEnd"
                 >
                   <text class="item-tag-name">{{ item.name }}</text>
                   <text class="item-tag-qty">{{ item.quantity }}{{ item.unit }}</text>
@@ -178,6 +180,18 @@
         </view>
       </view>
     </view>
+
+    <!-- 拖拽预览标签：在拖动时跟随手指移动 -->
+    <view
+      v-if="dragPreview.visible"
+      class="drag-preview"
+      :style="dragPreviewStyle"
+    >
+      <view class="item-tag">
+        <text class="item-tag-name">{{ dragPreview.name }}</text>
+        <text v-if="dragPreview.qty" class="item-tag-qty">{{ dragPreview.qty }}</text>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -215,6 +229,18 @@ const zoneMap = ref({})
 const draggingItemId = ref(null)
 const currentDragZoneIndex = ref(null)
 const zoneRects = ref([])
+const dragPreview = ref({
+  visible: false,
+  name: '',
+  qty: '',
+  left: 0,
+  top: 0,
+})
+
+const dragPreviewStyle = computed(() => ({
+  top: `${dragPreview.value.top}px`,
+  left: `${dragPreview.value.left}px`,
+}))
 
 const zoneItemsByZone = computed(() => {
   const zones = Array.from({ length: zoneNames.value.length }, () => [])
@@ -359,41 +385,79 @@ const toggleSelectItem = (id) => {
   }
 }
 
-// 标签模式下：开始拖动某个标签
-const handleTagTouchStart = (id) => {
+// 标签模式下：开始拖动某个标签（记录拖拽项并显示随手指移动的预览）
+const handleTagTouchStart = (id, e) => {
   draggingItemId.value = id
   currentDragZoneIndex.value = zoneMap.value[id] ?? 0
+
+  const item = sceneItems.value.find((it) => it.id === id)
+  const touch =
+    (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
+  const x = touch ? touch.clientX ?? touch.pageX ?? touch.x : 0
+  const y = touch ? touch.clientY ?? touch.pageY ?? touch.y : 0
+
+  dragPreview.value = {
+    visible: true,
+    name: item?.name || '',
+    qty: item ? `${item.quantity}${item.unit}` : '',
+    left: x,
+    top: y,
+  }
 }
 
-// 页面级：拖动过程中，根据手指位置判断当前所在区域
+// 标签标签自身的 touchmove（保证在所有端都能稳定触发拖动逻辑）
+const handleTagTouchMove = (id, e) => {
+  if (!draggingItemId.value) {
+    draggingItemId.value = id
+  }
+  handlePageTouchMove(e)
+}
+
+// 页面级：拖动过程中，根据手指位置判断当前所在区域，并实时更新标签归属区域与预览位置
 const handlePageTouchMove = (e) => {
   if (!draggingItemId.value) return
-  const touch = e.touches && e.touches[0]
+  const touch =
+    (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
   if (!touch) return
+  const x = touch.clientX ?? touch.pageX ?? touch.x
   const y = touch.clientY ?? touch.pageY ?? touch.y
+
+  // 更新预览位置，使其跟随手指
+  dragPreview.value = {
+    ...dragPreview.value,
+    left: x,
+    top: y,
+  }
+
   const rects = zoneRects.value || []
   for (let i = 0; i < rects.length; i++) {
     const r = rects[i]
     if (!r) continue
     if (y >= r.top && y <= r.bottom) {
-      currentDragZoneIndex.value = i
+      if (currentDragZoneIndex.value !== i) {
+        currentDragZoneIndex.value = i
+        const id = draggingItemId.value
+        const exist = sceneItems.value.find((item) => item.id === id)
+        if (!exist) break
+        zoneMap.value = {
+          ...zoneMap.value,
+          [id]: i,
+        }
+        console.log('[scene-label] zoneMap updated', { id, zoneIndex: i, zoneMap: zoneMap.value })
+      }
       break
     }
   }
 }
 
-// 页面级：手指松开后，将标签移动到最后命中的区域
+// 页面级：手指松开后，仅重置拖拽状态（拖动过程中已实时更新 zoneMap）
 const handlePageTouchEnd = () => {
   if (!draggingItemId.value && draggingItemId.value !== 0) return
-  const id = draggingItemId.value
-  const targetZone = currentDragZoneIndex.value ?? zoneMap.value[id] ?? 0
   draggingItemId.value = null
   currentDragZoneIndex.value = null
-  const exist = sceneItems.value.find((item) => item.id === id)
-  if (!exist) return
-  zoneMap.value = {
-    ...zoneMap.value,
-    [id]: targetZone,
+  dragPreview.value = {
+    ...dragPreview.value,
+    visible: false,
   }
 }
 
@@ -728,6 +792,10 @@ onLoad((options) => {
   gap: 8rpx;
 }
 
+.item-tag.dragging {
+  opacity: 0;
+}
+
 .item-tag-name {
   font-size: 26rpx;
   color: #333;
@@ -736,6 +804,12 @@ onLoad((options) => {
 .item-tag-qty {
   font-size: 22rpx;
   color: #999;
+}
+
+.drag-preview {
+  position: fixed;
+  z-index: 3000;
+  pointer-events: none;
 }
 
 .tag-zone-empty {

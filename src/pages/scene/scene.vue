@@ -29,8 +29,8 @@
       <cover-view class="hint-text">{{ hintText }}</cover-view>
     </cover-view>
 
-    <!-- 左侧绘图工具（直线/矩形/标签），悬浮居中 -->
-    <cover-view v-if="engine.mode.value === 'edit'" class="toolbar-left">
+    <!-- 左侧绘图工具（弹窗打开时隐藏） -->
+    <cover-view v-if="engine.mode.value === 'edit' && !showLabelInput" class="toolbar-left">
       <cover-view
         class="tool-item"
         :class="{ active: engine.currentTool.value === 'line' }"
@@ -91,14 +91,14 @@
       </cover-view>
     </cover-view>
 
-    <!-- 标签输入弹窗（需要 input 组件，保持 view 并用最高 z-index） -->
+    <!-- 标签输入弹窗（新建与修改名称共用，弹窗打开时左侧工具区已隐藏） -->
     <view v-if="showLabelInput" class="modal-mask" @click="cancelLabelInput">
       <view class="modal-box" @click.stop>
-        <text class="modal-title">添加标签</text>
+        <text class="modal-title">{{ isEditLabel ? '修改标签名称' : '添加标签' }}</text>
         <input
           v-model="labelText"
           class="modal-input"
-          placeholder="输入标签名称（如：客厅、卧室）"
+          :placeholder="isEditLabel ? '输入新名称' : '输入标签名称（如：客厅、卧室）'"
           :focus="showLabelInput"
           @confirm="confirmLabelInput"
         />
@@ -116,7 +116,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, getCurrentInstance } from 'vue'
+import { ref, computed, watch, onMounted, getCurrentInstance } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { useSceneCanvas } from '@/composables/useSceneCanvas'
 import { useScene } from '@/composables/useScene'
@@ -129,8 +129,11 @@ const canvasWidth = ref(375)
 const canvasHeight = ref(600)
 const labelText = ref('')
 const isCanvasReady = ref(false)
+/** 当前正在编辑的标签 id（与新建共用弹窗，有值时为修改名称） */
+const editingLabelId = ref(null)
 
-const showLabelInput = computed(() => !!engine.pendingLabelPos.value)
+const showLabelInput = computed(() => !!engine.pendingLabelPos.value || !!editingLabelId.value)
+const isEditLabel = computed(() => !!editingLabelId.value)
 
 const showHint = computed(() => engine.mode.value === 'view' && engine.elements.value.length === 0)
 
@@ -147,6 +150,27 @@ const hintText = computed(() => {
     return '点击右上角「进入编辑」开始绘制户型图'
   return ''
 })
+
+// 编辑模式下点击已绘制标签时引擎会设置 openLabelEditId，此处打开修改名称弹窗
+watch(
+  () => engine.openLabelEditId.value,
+  (id) => {
+    if (!id) return
+    const el = engine.elements.value.find((e) => e.id === id)
+    if (el?.type === 'label') {
+      editingLabelId.value = id
+      labelText.value = el.text || ''
+    }
+    engine.openLabelEditId.value = null
+  },
+)
+// 新建标签时打开弹窗，输入框清空
+watch(
+  () => engine.pendingLabelPos.value,
+  (val) => {
+    if (val) labelText.value = ''
+  },
+)
 
 onMounted(() => {
   const sysInfo = uni.getSystemInfoSync()
@@ -225,7 +249,12 @@ const handleSave = async () => {
 }
 
 const confirmLabelInput = () => {
-  if (labelText.value.trim()) {
+  if (editingLabelId.value) {
+    if (labelText.value.trim()) {
+      engine.updateLabelText(editingLabelId.value, labelText.value.trim())
+    }
+    editingLabelId.value = null
+  } else if (labelText.value.trim()) {
     engine.confirmLabel(labelText.value.trim())
   } else {
     engine.cancelLabel()
@@ -234,7 +263,11 @@ const confirmLabelInput = () => {
 }
 
 const cancelLabelInput = () => {
-  engine.cancelLabel()
+  if (editingLabelId.value) {
+    editingLabelId.value = null
+  } else {
+    engine.cancelLabel()
+  }
   labelText.value = ''
 }
 

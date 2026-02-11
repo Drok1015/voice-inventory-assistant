@@ -16,6 +16,8 @@ export const useSceneCanvas = () => {
   const viewport = reactive({ offsetX: 0, offsetY: 0, scale: 1 })
   const pendingLabelPos = ref(null)
   const selectedId = ref(null) // 当前选中元素 ID
+  /** 点击选中了标签时设为该 id，供页面打开修改名称弹窗，用后清空 */
+  const openLabelEditId = ref(null)
   /** 标签字号（新建标签的默认值；有选中标签时则调整该标签） */
   const labelFontSize = ref(14)
 
@@ -529,6 +531,9 @@ export const useSceneCanvas = () => {
     // potential_move 未触发移动 -> 视为点击选择
     if (interaction === 'potential_move' && interactingEl) {
       selectedId.value = interactingEl.id
+      if (interactingEl.type === 'label') {
+        openLabelEditId.value = interactingEl.id
+      }
       interaction = 'idle'
       interactingEl = null
       render()
@@ -620,6 +625,14 @@ export const useSceneCanvas = () => {
     pendingLabelPos.value = null
   }
 
+  /** 修改已存在标签的文案（编辑模式下点击标签后弹窗确认时调用） */
+  const updateLabelText = (id, text) => {
+    const el = elements.value.find((e) => e.id === id)
+    if (!el || el.type !== 'label') return
+    el.text = (text || '').trim() || el.text
+    render()
+  }
+
   // ============ 工具方法 ============
   const setMode = (m) => {
     mode.value = m
@@ -675,10 +688,10 @@ export const useSceneCanvas = () => {
   }
 
   return {
-    mode, currentTool, elements, viewport, pendingLabelPos, selectedId, labelFontSize,
+    mode, currentTool, elements, viewport, pendingLabelPos, selectedId, openLabelEditId, labelFontSize,
     init, render, setMode, setTool,
     onTouchStart, onTouchMove, onTouchEnd,
-    confirmLabel, cancelLabel, undo, deleteSelected, adjustLabelFontSize,
+    confirmLabel, cancelLabel, updateLabelText, undo, deleteSelected, adjustLabelFontSize,
     getDrawingData, loadDrawingData,
   }
 }

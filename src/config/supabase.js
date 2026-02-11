@@ -1,3 +1,5 @@
+import { withPageLoading } from '@/utils/loading'
+
 /**
  * Supabase REST API 配置（小程序通过 uni.request 直接调用 PostgREST）
  */
@@ -12,7 +14,7 @@ export const supabaseConfig = {
 }
 
 /**
- * 封装 Supabase REST 请求（PostgREST 风格）
+ * 封装 Supabase REST 请求（PostgREST 风格），请求期间显示页面 loading
  * @param {string} path - 路径，如 /rest/v1/inventory
  * @param {object} options - { method, data, header }
  * @returns {Promise<{ data: any, error: any }>}
@@ -20,7 +22,7 @@ export const supabaseConfig = {
 export const supabaseRequest = (path, options = {}) => {
   const { method = 'GET', data, header = {} } = options
 
-  return new Promise((resolve) => {
+  const promise = new Promise((resolve) => {
     uni.request({
       url: `${SUPABASE_URL}${path}`,
       method,
@@ -51,4 +53,5 @@ export const supabaseRequest = (path, options = {}) => {
       },
     })
   })
+  return withPageLoading(promise)
 }

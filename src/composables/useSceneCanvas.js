@@ -16,6 +16,8 @@ export const useSceneCanvas = () => {
   const viewport = reactive({ offsetX: 0, offsetY: 0, scale: 1 })
   const pendingLabelPos = ref(null)
   const selectedId = ref(null) // 当前选中元素 ID
+  /** 标签字号（新建标签的默认值；有选中标签时则调整该标签） */
+  const labelFontSize = ref(14)
 
   // ============ 常量 ============
   const MIN_SCALE = 0.2
@@ -25,6 +27,10 @@ export const useSceneCanvas = () => {
   const MOVE_THRESHOLD = 5
   const HANDLE_RADIUS = 8 // 手柄半径（屏幕像素）
   const HANDLE_HIT_RADIUS = 16 // 手柄点击热区
+  /** 绘制与命中层级：数值小的先绘制（在下层），命中时从高层往低层检测 */
+  const LAYER_ORDER = { rect: 0, line: 1, label: 2 }
+  const getElementsByLayerOrder = () =>
+    [...elements.value].sort((a, b) => (LAYER_ORDER[a.type] ?? 0) - (LAYER_ORDER[b.type] ?? 0))
 
   // ============ 交互状态 ============
   // 'idle' | 'drawing' | 'potential_move' | 'moving' | 'resizing' | 'panning' | 'pinching'
@@ -71,7 +77,7 @@ export const useSceneCanvas = () => {
     ctx.scale(viewport.scale, viewport.scale)
 
     drawGrid()
-    elements.value.forEach((el) => renderElement(el))
+    getElementsByLayerOrder().forEach((el) => renderElement(el))
 
     // 绘制预览
     if (interaction === 'drawing' && drawStartPos && drawCurrentPos) {
@@ -257,10 +263,11 @@ export const useSceneCanvas = () => {
     return null
   }
 
-  /** 检测是否点击到任意元素体（从上到下） */
+  /** 检测是否点击到任意元素体（按层级从高到低：标签 > 直线 > 矩形） */
   const hitTestElement = (cx, cy) => {
-    for (let i = elements.value.length - 1; i >= 0; i--) {
-      if (isPointInElement(cx, cy, elements.value[i])) return elements.value[i]
+    const sorted = getElementsByLayerOrder()
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      if (isPointInElement(cx, cy, sorted[i])) return sorted[i]
     }
     return null
   }
@@ -571,10 +578,11 @@ export const useSceneCanvas = () => {
     lastPanPos = null
   }
 
-  /** 检测标签命中（查看模式用） */
+  /** 检测标签命中（查看模式用，按层级从高到低） */
   const hitTestLabel = (cx, cy) => {
-    for (let i = elements.value.length - 1; i >= 0; i--) {
-      const el = elements.value[i]
+    const sorted = getElementsByLayerOrder()
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const el = sorted[i]
       if (el.type !== 'label') continue
       if (el._hitX !== undefined &&
         cx >= el._hitX && cx <= el._hitX + el._hitW &&
@@ -589,10 +597,22 @@ export const useSceneCanvas = () => {
     elements.value.push({
       type: 'label', id: generateId(),
       x: pendingLabelPos.value.x, y: pendingLabelPos.value.y,
-      text: text.trim(), fontSize: 14, color: '#07c160',
+      text: text.trim(), fontSize: labelFontSize.value, color: '#07c160',
     })
     pendingLabelPos.value = null
     currentTool.value = null // 自动取消工具
+    render()
+  }
+
+  const MIN_LABEL_FONT_SIZE = 8
+  const MAX_LABEL_FONT_SIZE = 72
+  /** 调整当前选中标签的字号，每次 ±1px（仅当选中项为标签时生效） */
+  const adjustLabelFontSize = (delta) => {
+    if (!selectedId.value) return
+    const el = elements.value.find((e) => e.id === selectedId.value)
+    if (!el || el.type !== 'label') return
+    const next = (el.fontSize || 14) + delta
+    el.fontSize = Math.max(MIN_LABEL_FONT_SIZE, Math.min(MAX_LABEL_FONT_SIZE, next))
     render()
   }
 
@@ -655,10 +675,10 @@ export const useSceneCanvas = () => {
   }
 
   return {
-    mode, currentTool, elements, viewport, pendingLabelPos, selectedId,
+    mode, currentTool, elements, viewport, pendingLabelPos, selectedId, labelFontSize,
     init, render, setMode, setTool,
     onTouchStart, onTouchMove, onTouchEnd,
-    confirmLabel, cancelLabel, undo, deleteSelected,
+    confirmLabel, cancelLabel, undo, deleteSelected, adjustLabelFontSize,
     getDrawingData, loadDrawingData,
   }
 }

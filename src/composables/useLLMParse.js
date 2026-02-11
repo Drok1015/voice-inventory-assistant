@@ -1,4 +1,5 @@
 import { DEEPSEEK_CONFIG } from '../config/deepseek'
+import { withPageLoading } from '@/utils/loading'
 
 /** 获取今天的日期字符串 YYYY-MM-DD */
 const getTodayStr = () => {
@@ -42,33 +43,36 @@ export const parseUserTextToItem = async (userText) => {
   }
 
   try {
-    const res = await new Promise((resolve, reject) => {
-      uni.request({
-        url: `${DEEPSEEK_CONFIG.baseURL}/v1/chat/completions`,
-        method: 'POST',
-        header: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        data: {
-          model: DEEPSEEK_CONFIG.model,
-          messages: [
-            { role: 'system', content: buildParsePrompt() },
-            { role: 'user', content: `用户说："${userText.trim()}"` },
-          ],
-          temperature: 0.1,
-        },
-        success: (resp) => {
-          if (resp.statusCode >= 200 && resp.statusCode < 300) {
-            resolve(resp)
-          } else {
-            console.error('DeepSeek API 错误:', resp.statusCode, resp.data)
-            reject(new Error(`HTTP ${resp.statusCode}`))
-          }
-        },
-        fail: reject,
-      })
-    })
+    const res = await withPageLoading(
+      new Promise((resolve, reject) => {
+        uni.request({
+          url: `${DEEPSEEK_CONFIG.baseURL}/v1/chat/completions`,
+          method: 'POST',
+          header: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          data: {
+            model: DEEPSEEK_CONFIG.model,
+            messages: [
+              { role: 'system', content: buildParsePrompt() },
+              { role: 'user', content: `用户说："${userText.trim()}"` },
+            ],
+            temperature: 0.1,
+          },
+          success: (resp) => {
+            if (resp.statusCode >= 200 && resp.statusCode < 300) {
+              resolve(resp)
+            } else {
+              console.error('DeepSeek API 错误:', resp.statusCode, resp.data)
+              reject(new Error(`HTTP ${resp.statusCode}`))
+            }
+          },
+          fail: reject,
+        })
+      }),
+      '解析中...',
+    )
 
     const data = res.data
     const content = data?.choices?.[0]?.message?.content || ''

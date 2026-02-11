@@ -29,14 +29,14 @@
       <cover-view class="hint-text">{{ hintText }}</cover-view>
     </cover-view>
 
-    <!-- 底部工具栏（仅编辑模式） -->
-    <cover-view v-if="engine.mode.value === 'edit'" class="toolbar">
+    <!-- 左侧绘图工具（直线/矩形/标签），悬浮居中 -->
+    <cover-view v-if="engine.mode.value === 'edit'" class="toolbar-left">
       <cover-view
         class="tool-item"
         :class="{ active: engine.currentTool.value === 'line' }"
         @click="toggleTool('line')"
       >
-        <cover-view class="tool-icon">╱</cover-view>
+        <cover-view class="tool-icon tool-icon-line">—</cover-view>
         <cover-view class="tool-label">直线</cover-view>
       </cover-view>
       <cover-view
@@ -44,7 +44,7 @@
         :class="{ active: engine.currentTool.value === 'rect' }"
         @click="toggleTool('rect')"
       >
-        <cover-view class="tool-icon">▢</cover-view>
+        <cover-view class="tool-icon tool-icon-rect">□</cover-view>
         <cover-view class="tool-label">矩形</cover-view>
       </cover-view>
       <cover-view
@@ -52,24 +52,41 @@
         :class="{ active: engine.currentTool.value === 'label' }"
         @click="toggleTool('label')"
       >
-        <cover-view class="tool-icon">T</cover-view>
+        <cover-view class="tool-icon tool-icon-label">A</cover-view>
         <cover-view class="tool-label">标签</cover-view>
       </cover-view>
-      <cover-view class="tool-divider" />
+    </cover-view>
+
+    <!-- 底部工具栏（选中画布上的标签时显示 +/− 调该标签字号；撤销/删除/保存） -->
+    <cover-view v-if="engine.mode.value === 'edit'" class="toolbar">
       <cover-view
-        v-if="engine.selectedId.value"
-        class="tool-item delete"
-        @click="handleDelete"
+        v-if="isLabelSelected"
+        class="tool-item tool-item-size"
+        @click="handleLabelSize(-1)"
       >
-        <cover-view class="tool-icon">✕</cover-view>
+        <cover-view class="tool-icon tool-icon-size">−</cover-view>
+        <cover-view class="tool-label">小</cover-view>
+      </cover-view>
+      <cover-view
+        v-if="isLabelSelected"
+        class="tool-item tool-item-size"
+        @click="handleLabelSize(1)"
+      >
+        <cover-view class="tool-icon tool-icon-size">+</cover-view>
+        <cover-view class="tool-label">大</cover-view>
+      </cover-view>
+      <cover-view v-if="isLabelSelected" class="tool-divider" />
+      <cover-view v-if="engine.selectedId.value" class="tool-item delete" @click="handleDelete">
+        <cover-view class="tool-icon tool-icon-delete">×</cover-view>
         <cover-view class="tool-label">删除</cover-view>
       </cover-view>
+      <cover-view v-if="engine.selectedId.value" class="tool-divider" />
       <cover-view class="tool-item" @click="handleUndo">
-        <cover-view class="tool-icon">↩</cover-view>
+        <cover-view class="tool-icon tool-icon-undo">↩</cover-view>
         <cover-view class="tool-label">撤销</cover-view>
       </cover-view>
       <cover-view class="tool-item save" @click="handleSave">
-        <cover-view class="tool-icon">✓</cover-view>
+        <cover-view class="tool-icon tool-icon-save">✓</cover-view>
         <cover-view class="tool-label">保存</cover-view>
       </cover-view>
     </cover-view>
@@ -115,9 +132,15 @@ const isCanvasReady = ref(false)
 
 const showLabelInput = computed(() => !!engine.pendingLabelPos.value)
 
-const showHint = computed(
-  () => engine.mode.value === 'view' && engine.elements.value.length === 0,
-)
+const showHint = computed(() => engine.mode.value === 'view' && engine.elements.value.length === 0)
+
+/** 当前选中的是否为画布上的标签（用于显示大/小按钮） */
+const isLabelSelected = computed(() => {
+  const id = engine.selectedId.value
+  if (!id) return false
+  const el = engine.elements.value.find((e) => e.id === id)
+  return el?.type === 'label'
+})
 
 const hintText = computed(() => {
   if (engine.mode.value === 'view' && engine.elements.value.length === 0)
@@ -214,6 +237,11 @@ const cancelLabelInput = () => {
   engine.cancelLabel()
   labelText.value = ''
 }
+
+/** 选中标签的字号 ±1px */
+const handleLabelSize = (delta) => {
+  engine.adjustLabelFontSize(delta)
+}
 </script>
 
 <style lang="scss" scoped>
@@ -273,7 +301,25 @@ const cancelLabelInput = () => {
   color: #bbb;
 }
 
-/* 底部工具栏 */
+/* 左侧绘图工具（直线/矩形/标签），悬浮垂直居中 */
+.toolbar-left {
+  position: fixed;
+  left: 24rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 12rpx;
+  border-radius: 24rpx;
+  background-color: rgba(255, 255, 255, 0.95);
+  border: 1rpx solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.06);
+  z-index: 100;
+}
+
+/* 底部工具栏（撤销/删除/保存） */
 .toolbar {
   position: fixed;
   bottom: 0;
@@ -295,7 +341,7 @@ const cancelLabelInput = () => {
   align-items: center;
   padding: 12rpx 24rpx;
   border-radius: 12rpx;
-  min-width: 88rpx;
+  min-width: 44rpx;
 
   &.active {
     background: rgba(7, 193, 96, 0.1);
@@ -324,6 +370,71 @@ const cancelLabelInput = () => {
   font-size: 36rpx;
   color: #666;
   line-height: 1;
+}
+
+/* 底部工具栏图标：统一尺寸与样式 */
+.toolbar .tool-icon {
+  width: 56rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  text-align: center;
+  font-size: 40rpx;
+  font-weight: 600;
+  color: #333;
+  box-sizing: border-box;
+}
+.toolbar .tool-item.delete .tool-icon {
+  color: #ee4d2d;
+  font-size: 44rpx;
+  font-weight: 400;
+}
+.toolbar .tool-item.save .tool-icon {
+  color: #07c160;
+  font-size: 42rpx;
+  font-weight: 700;
+}
+.tool-icon-undo {
+  font-size: 42rpx;
+}
+.tool-icon-save {
+  font-size: 42rpx;
+  font-weight: 700;
+}
+.tool-icon-size {
+  font-size: 44rpx;
+  font-weight: 400;
+  line-height: 56rpx;
+}
+.tool-item-size .tool-label {
+  color: #666;
+}
+
+/* 左侧绘图工具图标：统一尺寸与样式 */
+.toolbar-left .tool-icon {
+  width: 56rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  text-align: center;
+  font-size: 40rpx;
+  font-weight: 600;
+  color: #333;
+  box-sizing: border-box;
+}
+.toolbar-left .tool-item.active .tool-icon {
+  color: #07c160;
+}
+.tool-icon-line {
+  font-size: 44rpx;
+  font-weight: 700;
+  letter-spacing: -2rpx;
+}
+.tool-icon-rect {
+  font-size: 42rpx;
+  line-height: 56rpx;
+}
+.tool-icon-label {
+  font-size: 40rpx;
+  font-weight: 600;
 }
 
 .tool-label {

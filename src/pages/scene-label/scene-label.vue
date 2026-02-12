@@ -1,5 +1,9 @@
 <template>
-  <view class="page" @touchmove="handlePageTouchMove" @touchend="handlePageTouchEnd">
+  <view
+    class="page"
+    @touchmove.capture="handlePageTouchMove"
+    @touchend.capture="handlePageTouchEnd"
+  >
     <!-- 顶部标题 + 视图模式切换 + 加入场景按钮 -->
     <view class="label-header">
       <view class="label-header-row">
@@ -62,6 +66,9 @@
               </view>
               <text v-if="item.remark" class="item-remark">{{ item.remark }}</text>
             </view>
+            <view class="item-card-remove" @tap.stop="removeFromScene(item.id)">
+              <text class="item-card-remove-text">移除</text>
+            </view>
           </view>
         </view>
 
@@ -96,8 +103,6 @@
                   :key="item.id"
                   :class="['item-tag', { dragging: draggingItemId === item.id }]"
                   @touchstart.stop="handleTagTouchStart(item.id, $event)"
-                  @touchmove.stop="handleTagTouchMove(item.id, $event)"
-                  @touchend.stop="handlePageTouchEnd"
                 >
                   <text class="item-tag-name">{{ item.name }}</text>
                   <text class="item-tag-qty">{{ item.quantity }}{{ item.unit }}</text>
@@ -138,8 +143,8 @@
             v-for="item in pickerItems"
             :key="item.id"
             class="picker-item"
-            :class="{ selected: selectedItemIds.includes(item.id) }"
-            @tap.stop="toggleSelectItem(item.id)"
+            :class="{ selected: pendingAddIds.includes(item.id) }"
+            @tap.stop="togglePendingAdd(item.id)"
           >
             <view class="picker-item-main">
               <text class="picker-item-name">{{ item.name }}</text>
@@ -182,14 +187,12 @@
     </view>
 
     <!-- 拖拽预览标签：在拖动时跟随手指移动 -->
-    <view
-      v-if="dragPreview.visible"
-      class="drag-preview"
-      :style="dragPreviewStyle"
-    >
-      <view class="item-tag">
-        <text class="item-tag-name">{{ dragPreview.name }}</text>
-        <text v-if="dragPreview.qty" class="item-tag-qty">{{ dragPreview.qty }}</text>
+    <view v-if="dragPreview.visible" class="drag-preview" :style="dragPreviewStyle">
+      <view class="drag-preview-inner">
+        <view class="item-tag">
+          <text class="item-tag-name">{{ dragPreview.name }}</text>
+          <text v-if="dragPreview.qty" class="item-tag-qty">{{ dragPreview.qty }}</text>
+        </view>
       </view>
     </view>
   </view>
@@ -207,9 +210,10 @@ const displayMode = ref('list')
 // 当前场景下已选中的物品 id 列表
 const selectedItemIds = ref([])
 
-// 底部选择器相关状态
+// 底部选择器相关状态（点击物品只记录待加入，点「完成」再写入场景）
 const showPicker = ref(false)
 const searchKeyword = ref('')
+const pendingAddIds = ref([])
 
 // 库存数据
 const { sortedItems, isLoading } = useInventory()
@@ -224,8 +228,10 @@ const sceneItems = computed(() =>
 
 // 区域列表与分布（仅在「标签」模式下使用）
 // zoneNames：区域名称数组；zoneMap：item.id -> 区域索引（0 开始），未指定的默认在 0 区
-const zoneNames = ref(['区域 1', '区域 2', '区域 3', '区域 4'])
+// zoneOrder：可选，每区的 item id 顺序；拖入某区时只追加到末尾，不改变该区原有顺序
+const zoneNames = ref(['区域 1'])
 const zoneMap = ref({})
+const zoneOrder = ref({}) // { [zoneIndex]: [id1, id2, ...] }
 const draggingItemId = ref(null)
 const currentDragZoneIndex = ref(null)
 const zoneRects = ref([])
@@ -238,31 +244,46 @@ const dragPreview = ref({
 })
 
 const dragPreviewStyle = computed(() => ({
-  top: `${dragPreview.value.top}px`,
-  left: `${dragPreview.value.left}px`,
+  transform: `translate(${dragPreview.value.left}px, ${dragPreview.value.top}px)`,
 }))
 
+// 按 zoneOrder 排序：有 zoneOrder 时先按该顺序，再追加未在顺序中的项；无则按 sceneItems 顺序
 const zoneItemsByZone = computed(() => {
   const zones = Array.from({ length: zoneNames.value.length }, () => [])
-  sceneItems.value.forEach((item) => {
-    const zoneIndex = zoneMap.value[item.id] ?? 0
-    const maxIndex = zoneNames.value.length - 1
-    const idx = zoneIndex >= 0 && zoneIndex <= maxIndex ? zoneIndex : 0
-    zones[idx].push(item)
+  const idToItem = Object.fromEntries(sceneItems.value.map((item) => [item.id, item]))
+  const maxIndex = zoneNames.value.length - 1
+
+  zoneNames.value.forEach((_, zoneIndex) => {
+    const orderedIds = zoneOrder.value[zoneIndex]
+    const inZone = sceneItems.value.filter((item) => {
+      const idx = zoneMap.value[item.id] ?? 0
+      const z = idx >= 0 && idx <= maxIndex ? idx : 0
+      return z === zoneIndex
+    })
+    if (orderedIds && orderedIds.length) {
+      const ordered = orderedIds
+        .filter((id) => idToItem[id] && (zoneMap.value[id] ?? 0) === zoneIndex)
+        .map((id) => idToItem[id])
+      const remaining = inZone.filter((item) => !orderedIds.includes(item.id))
+      zones[zoneIndex] = [...ordered, ...remaining]
+    } else {
+      zones[zoneIndex] = inZone
+    }
   })
   return zones
 })
 
-// 场景物品变化时，维护 zoneMap：
+// 场景物品变化时，维护 zoneMap 与 zoneOrder：
 // 1. 新增物品 -> 默认放入第 1 区（索引 0）
-// 2. 删除物品 -> 从 map 中清理
+// 2. 删除物品 -> 从 map 与各区 order 中清理
 watch(
   sceneItems,
   (items) => {
-    const existIds = items.map((i) => i.id)
+    const existIds = new Set(items.map((i) => i.id))
     const nextMap = { ...zoneMap.value }
     Object.keys(nextMap).forEach((id) => {
-      if (!existIds.includes(Number(id)) && !existIds.includes(id)) {
+      const numId = Number(id)
+      if (!existIds.has(numId) && !existIds.has(id)) {
         delete nextMap[id]
       }
     })
@@ -272,6 +293,17 @@ watch(
       }
     })
     zoneMap.value = nextMap
+
+    const nextOrder = { ...zoneOrder.value }
+    let changed = false
+    Object.keys(nextOrder).forEach((z) => {
+      const kept = nextOrder[z].filter((id) => existIds.has(id) || existIds.has(Number(id)))
+      if (kept.length !== nextOrder[z].length) {
+        nextOrder[z] = kept
+        changed = true
+      }
+    })
+    if (changed) zoneOrder.value = nextOrder
   },
   { immediate: true },
 )
@@ -304,14 +336,14 @@ watch(
   },
 )
 
-// 选择器中的候选物品列表：
-// 1. 支持搜索（名称模糊匹配）
-// 2. 名称中包含当前标签名称的排在前面
+// 选择器中的候选物品列表：已加入场景的过滤掉；支持搜索；名称含标签的排前
 const pickerItems = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
   const label = labelText.value.trim().toLowerCase()
+  const inScene = selectedItemIds.value
 
   const filtered = sortedItems.value.filter((item) => {
+    if (inScene.includes(item.id)) return false
     if (!keyword) return true
     return item.name.toLowerCase().includes(keyword)
   })
@@ -347,6 +379,7 @@ watch(
 const openPicker = () => {
   showPicker.value = true
   searchKeyword.value = ''
+  pendingAddIds.value = []
 }
 
 // 抽取保存逻辑，供「完成」与「保存设置」共用
@@ -370,19 +403,27 @@ const saveSceneConfig = async (showToast = true) => {
   return ok
 }
 
-// 点击完成 / 遮罩关闭 -> 保存当前标签页的配置到 Supabase
+// 点击完成 / 遮罩关闭 -> 将本次勾选的待加入写入场景并保存
 const closePicker = async () => {
+  const toAdd = pendingAddIds.value.filter((id) => !selectedItemIds.value.includes(id))
+  selectedItemIds.value = [...selectedItemIds.value, ...toAdd]
+  pendingAddIds.value = []
   showPicker.value = false
   await saveSceneConfig(true)
 }
 
-// 选中 / 取消选中物品
-const toggleSelectItem = (id) => {
-  if (selectedItemIds.value.includes(id)) {
-    selectedItemIds.value = selectedItemIds.value.filter((x) => x !== id)
+// 选择器内：勾选/取消本次待加入（不立刻写入场景）
+const togglePendingAdd = (id) => {
+  if (pendingAddIds.value.includes(id)) {
+    pendingAddIds.value = pendingAddIds.value.filter((x) => x !== id)
   } else {
-    selectedItemIds.value = [...selectedItemIds.value, id]
+    pendingAddIds.value = [...pendingAddIds.value, id]
   }
+}
+
+// 从当前场景列表中移除（不删物品信息）
+const removeFromScene = (id) => {
+  selectedItemIds.value = selectedItemIds.value.filter((x) => x !== id)
 }
 
 // 标签模式下：开始拖动某个标签（记录拖拽项并显示随手指移动的预览）
@@ -391,10 +432,9 @@ const handleTagTouchStart = (id, e) => {
   currentDragZoneIndex.value = zoneMap.value[id] ?? 0
 
   const item = sceneItems.value.find((it) => it.id === id)
-  const touch =
-    (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
-  const x = touch ? touch.clientX ?? touch.pageX ?? touch.x : 0
-  const y = touch ? touch.clientY ?? touch.pageY ?? touch.y : 0
+  const touch = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
+  const x = touch ? (touch.clientX ?? touch.pageX ?? touch.x) : 0
+  const y = touch ? (touch.clientY ?? touch.pageY ?? touch.y) : 0
 
   dragPreview.value = {
     visible: true,
@@ -405,54 +445,68 @@ const handleTagTouchStart = (id, e) => {
   }
 }
 
-// 标签标签自身的 touchmove（保证在所有端都能稳定触发拖动逻辑）
-const handleTagTouchMove = (id, e) => {
-  if (!draggingItemId.value) {
-    draggingItemId.value = id
-  }
-  handlePageTouchMove(e)
-}
-
-// 页面级：拖动过程中，根据手指位置判断当前所在区域，并实时更新标签归属区域与预览位置
+// 页面级（capture）：拖动过程中只更新预览位置与「当前所在区域」索引，不实时改 zoneMap，避免 DOM 重排导致 zoneRects 失效
 const handlePageTouchMove = (e) => {
   if (!draggingItemId.value) return
-  const touch =
-    (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
+  const touch = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
   if (!touch) return
   const x = touch.clientX ?? touch.pageX ?? touch.x
   const y = touch.clientY ?? touch.pageY ?? touch.y
 
-  // 更新预览位置，使其跟随手指
+  // 仅更新预览位置（用 transform 在样式中做流畅跟随）
   dragPreview.value = {
     ...dragPreview.value,
     left: x,
     top: y,
   }
 
+  // 只记录当前手指所在区域索引，不写 zoneMap，保证 zoneRects 在整次拖动中不变
   const rects = zoneRects.value || []
   for (let i = 0; i < rects.length; i++) {
     const r = rects[i]
     if (!r) continue
     if (y >= r.top && y <= r.bottom) {
-      if (currentDragZoneIndex.value !== i) {
-        currentDragZoneIndex.value = i
-        const id = draggingItemId.value
-        const exist = sceneItems.value.find((item) => item.id === id)
-        if (!exist) break
-        zoneMap.value = {
-          ...zoneMap.value,
-          [id]: i,
-        }
-        console.log('[scene-label] zoneMap updated', { id, zoneIndex: i, zoneMap: zoneMap.value })
-      }
+      currentDragZoneIndex.value = i
       break
     }
   }
 }
 
-// 页面级：手指松开后，仅重置拖拽状态（拖动过程中已实时更新 zoneMap）
+// 获取某区当前物品 id 列表（按 sceneItems 顺序），用于首次建立 zoneOrder
+const getZoneItemIdsInSceneOrder = (zoneIndex) => {
+  const maxIndex = zoneNames.value.length - 1
+  return sceneItems.value
+    .filter((item) => {
+      const z = zoneMap.value[item.id] ?? 0
+      const idx = z >= 0 && z <= maxIndex ? z : 0
+      return idx === zoneIndex
+    })
+    .map((item) => item.id)
+}
+
+// 页面级（capture）：手指松开时再根据当前区域写入 zoneMap，并更新 zoneOrder（拖入区只追加到末尾）
 const handlePageTouchEnd = () => {
-  if (!draggingItemId.value && draggingItemId.value !== 0) return
+  if (draggingItemId.value == null) return
+  const id = draggingItemId.value
+  const toZone = currentDragZoneIndex.value
+  const fromZone = zoneMap.value[id] ?? 0
+
+  if (toZone != null && toZone >= 0 && toZone < (zoneNames.value?.length ?? 0)) {
+    zoneMap.value = {
+      ...zoneMap.value,
+      [id]: toZone,
+    }
+    // 只追加到目标区末尾，不改变目标区原有顺序
+    const nextOrder = { ...zoneOrder.value }
+    if (fromZone !== toZone) {
+      if (nextOrder[fromZone]) {
+        nextOrder[fromZone] = nextOrder[fromZone].filter((i) => i !== id)
+      }
+      const toList = nextOrder[toZone] ?? getZoneItemIdsInSceneOrder(toZone)
+      nextOrder[toZone] = [...toList.filter((i) => i !== id), id]
+      zoneOrder.value = nextOrder
+    }
+  }
   draggingItemId.value = null
   currentDragZoneIndex.value = null
   dragPreview.value = {
@@ -610,6 +664,8 @@ onLoad((options) => {
 
 .tag-save-text {
   font-size: 22rpx;
+  display: flex;
+  align-items: center;
   color: #999;
 }
 
@@ -622,6 +678,8 @@ onLoad((options) => {
 .tag-save-btn-text {
   font-size: 24rpx;
   color: #fff;
+  display: flex;
+  align-items: center;
 }
 
 /* 空状态 */
@@ -654,6 +712,9 @@ onLoad((options) => {
 }
 
 .item-card {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
   padding: 24rpx;
   background: #fff;
   border-radius: 16rpx;
@@ -662,6 +723,18 @@ onLoad((options) => {
   & + .item-card {
     margin-top: 16rpx;
   }
+}
+
+.item-card-remove {
+  flex-shrink: 0;
+  padding: 8rpx 20rpx;
+  border-radius: 24rpx;
+  background: rgba(255, 59, 48, 0.1);
+}
+
+.item-card-remove-text {
+  font-size: 24rpx;
+  color: #ff3b30;
 }
 
 .item-main {
@@ -808,8 +881,16 @@ onLoad((options) => {
 
 .drag-preview {
   position: fixed;
+  left: 0;
+  top: 0;
   z-index: 3000;
   pointer-events: none;
+  will-change: transform;
+}
+
+/* 内层偏移 -50% 使标签中心对齐到外层 translate 的目标点（手指位置） */
+.drag-preview-inner {
+  transform: translate(-50%, -50%);
 }
 
 .tag-zone-empty {
